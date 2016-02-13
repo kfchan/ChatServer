@@ -8,13 +8,18 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ChatServer {
 
-	private HashMap<String,Socket> socks;
-	private Lock lock;
+	private static String THIS_IS_YOU = "(** this is you!)";
+
+	private HashMap<String,Socket> socks; // list of sockets for the chatroom
+	private Lock lock; // for the list of sockets
+	private HashMap<String, HashSet<String>> chatrooms;
+	private ServerSocket server_sock;
 
 	public static void main(String[] arg) throws IOException { 
 		if (arg.length > 1) {
@@ -35,27 +40,24 @@ public class ChatServer {
 		ChatServer myserver = new ChatServer(port);
 	}
 
+	/**
+	* minds socket to port
+	**/
 	public ChatServer(int port) throws IOException {
 		socks = new HashMap<String,Socket>();
 		lock = new ReentrantLock();
+		chatrooms = new HashMap<String, HashSet<String>>(); 
 
-		ServerSocket server_sock = null;
+		binding(port);
+		createThreads();
+	}
 
-		try {
-			server_sock = new ServerSocket(port);
-			server_sock.setReuseAddress(true);
-		} catch (IOException e) {
-			System.err.println("Creating socket failed");
-			System.exit(1);
-		} catch (IllegalArgumentException e) {
-			System.err.println("Error binding to port");
-			System.exit(1);
-		} 
+	private void createThreads() throws IOException {
 		try {
 			while (true) {
 				try {
-					Socket sock = server_sock.accept();
 					// create thread, run()
+					Socket sock = server_sock.accept();
 					requestHandler rH = new requestHandler(sock);
 					Thread t = new Thread(rH);
 					t.start();
@@ -69,6 +71,23 @@ public class ChatServer {
 		}
 	}
 
+	private void binding(int port) {
+		try {
+			server_sock = new ServerSocket(port);
+			server_sock.setReuseAddress(true);
+		} catch (IOException e) {
+			System.err.println("Creating socket failed");
+			System.exit(1);
+		} catch (IllegalArgumentException e) {
+			System.err.println("Error binding to port");
+			System.exit(1);
+		} 
+	}
+
+	/**
+	* handles looping message sending for each client
+	* starts with asking user for their name
+	**/
 	public void handle_client(Socket sock) throws IOException {
 		byte[] data = new byte[2000];
 		int len = 0;
@@ -83,7 +102,9 @@ public class ChatServer {
 			return;
 		}
 
-		String greeting = "Please enter your name: ";
+		String greeting = "<= Welcome to the Weeby chat server! \n";
+		greeting += "<= Login Name? \n";
+		greeting += "=> ";
 		out.write(greeting.getBytes());
 
 		String username = "";
@@ -92,17 +113,22 @@ public class ChatServer {
 		while ((len = in.read(data)) != -1) {
 			username = new String(data, 0, len-2);
 			lock.lock();
-			if (!socks.containsKey(username)) {
+			if (!socks.containsKey(username)) { // user gave an unused name
 				loop = false;
 				socks.put(username, sock);
-			} else {
+			} else { // user gave a name someone else already chose
 				loop = true;
-				String tryAgain = "That user name has been taken! Input another one! \n";
+				String tryAgain = "<= That user name has been taken!\n";
+				tryAgain += "<= Login Name? \n";
+				tryAgain += "=> ";
 				out.write(tryAgain.getBytes());
 			}
 			lock.unlock();
 
-			if (!loop) {
+			if (!loop) { // valid username
+				String customWelcome = "=> Welcome " + username + "!\n";
+				// customWelcome += "=> ";
+				out.write(customWelcome.getBytes());
 				break;
 			}
 		}
@@ -118,18 +144,19 @@ public class ChatServer {
 			String message = new String(data, 0, len);
 
 			if (message.equals("^]\n")) {
-				System.out.println(username + "left");
+				System.out.println("when does this even print?");
+				System.out.println(username + " left");
 			}
 
 			// print message to all other users
-			sendMessage(username + ": " + message);
+			sendMessage("=> " + username + ": " + message, username);
 		}
 		if (len == -1) {
+			String leftRoom = "=> * user has left chat: " + username + " \n";
+			sendMessageToAll(leftRoom, username);
 			lock.lock();
 			socks.remove(username);
-			lock.unlock();
-			String leftRoom = username + " left the chatroom. \n";
-			sendMessage(leftRoom);
+			lock.unlock();			
 			sock.close();
 
 			sock.close();
@@ -137,28 +164,32 @@ public class ChatServer {
 		}
 	}
 
+	/**
+	* handles new user functions when they join a chat room
+	**/
 	private void newUser(String name, Socket newSock) {
 		StringBuffer message = new StringBuffer();
-		String joined = "joined the chat!";
+		message.append("<= Entering room: ");
 		message.append(name);
-		message.append(" ");
-		message.append(joined);
 		message.append("\n");
 		byte[] m = message.toString().getBytes();
 
 		StringBuffer users = new StringBuffer();
-		users.append("Current users online: ");
+		users.append("<= Current users online: \n");
 
 		Socket s;
 		OutputStream out;
 		lock.lock();
 		for (String n : socks.keySet()) {
 			s = socks.get(n);
-			if (s == newSock) {
-				continue;
-			}
+			users.append("<= * ");
 			users.append(n);
 			users.append(" ");
+			if (s == newSock) {
+				users.append(THIS_IS_YOU);
+				// continue;
+			}
+			users.append("\n");
 			try {
 				out = s.getOutputStream();
 				out.write(m);
@@ -168,7 +199,7 @@ public class ChatServer {
 			}
 		}
 		lock.unlock();
-		users.append("\n");
+		users.append("<= End of list. \n");
 
 		try{
 			newSock.getOutputStream().write(users.toString().getBytes());
@@ -177,13 +208,19 @@ public class ChatServer {
 		}
 	}
 
-
-	private void sendMessage(String message) {
+	/**
+	* sends a message to everyone but the sender's room for now
+	* will be changing it so that the server can handle multiple chat rooms
+	**/
+	private void sendMessage(String message, String username) {
 		byte[] m = message.getBytes();
 		OutputStream out;
 		Socket s;
 		lock.lock();
 		for (String n : socks.keySet()) {
+			if (n.equals(username)) {
+				continue;
+			} 
 			try {
 				s = socks.get(n);
 				out = s.getOutputStream();
@@ -196,6 +233,37 @@ public class ChatServer {
 		lock.unlock();
 	}
 
+	/**
+	* sends a message to everyone
+	* for the messages when someone leaves
+	**/
+	private void sendMessageToAll(String message, String username) {
+		byte[] mToRest = message.getBytes();
+		byte[] mToSender = (message + " " + THIS_IS_YOU).getBytes();
+		byte[] m = mToRest;
+		OutputStream out;
+		Socket s;
+		lock.lock();
+		for (String n : socks.keySet()) {
+			try {
+				s = socks.get(n);
+				out = s.getOutputStream();
+				if (n.equals(username)) {
+					m = mToSender;
+				}
+				out.write(m);
+				m = mToRest;
+			} catch (IOException e) {
+				System.err.println("Error: message sending failed for: " + n );
+				return;
+			}
+		}
+		lock.unlock();
+	}
+
+	/**
+	* thread for each socket
+	**/
 	public class requestHandler implements Runnable {
 		Socket socket;
 
