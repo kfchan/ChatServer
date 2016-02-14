@@ -50,6 +50,7 @@ public class ChatServer {
 
 		// default to one chatroom for now to make sure it works
 		chatrooms.put("main", new HashSet<String>());
+		chatrooms.put("cats", new HashSet<String>());
 
 		binding(port);
 		createThreads();
@@ -65,7 +66,7 @@ public class ChatServer {
 					Thread t = new Thread(rH);
 					t.start();
 				} catch (IOException e) {
-					System.err.println("Error accepting connection");
+					System.err.println("Error accepting connection.");
 					continue;
 				}
 			}
@@ -79,10 +80,10 @@ public class ChatServer {
 			server_sock = new ServerSocket(port);
 			server_sock.setReuseAddress(true);
 		} catch (IOException e) {
-			System.err.println("Creating socket failed");
+			System.err.println("Creating socket failed.");
 			System.exit(1);
 		} catch (IllegalArgumentException e) {
-			System.err.println("Error binding to port");
+			System.err.println("Error binding to port.");
 			System.exit(1);
 		} 
 	}
@@ -115,13 +116,19 @@ public class ChatServer {
 		int len = 0;
 
 		String listOfCommands = "<= Here are a list of commands you can do! \n";
-		listOfCommands += "<= * \"/join <Room Name> \": lets you join the room called \'Room Name\' \n";
-		listOfCommands += "<= * \"/rooms \": prints out the list of rooms and how many people are in each \n";
-		listOfCommands += "<= * \"/createRoom <Room Name> \": creates a chatroom called \'Room Name\' \n";
-		listOfCommands += "<= * \"/help <Room Name> \": lists these command options \n";
+		listOfCommands += "<= * /join <Room Name>: lets you join the room called \'Room Name\' \n";
+		listOfCommands += "<= * /rooms: prints out the list of rooms and how many people are in each \n";
+		listOfCommands += "<= * /createRoom <Room Name>: creates a chatroom called \'Room Name\' \n";
+		listOfCommands += "<= * /deleteRoom <Room Name>: deletes the chatroom called \'Room Name\' \n";
+		listOfCommands += "<= * /help <Room Name>: lists these command options \n";
+		listOfCommands += "<= * /quit: to exit the chatroom \n";
 		listOfCommands += "<= End of list. \n";
 
 		out.write(listOfCommands.getBytes());
+
+		String user = "=> ";
+
+		out.write(user.getBytes());
 
 		while ((len = in.read(data)) != -1) {
 			String message = new String(data, 0, len);
@@ -138,22 +145,82 @@ public class ChatServer {
 				sock.close();
 				return;
 			} else if (cmd[0].equals("/rooms")) {
-
+				printRooms(sock);
 			} else if (cmd[0].equals("/join")) {
 				// default group for now
-				String groupName = "main";
+				if (cmd.length < 2) {
+					String incorrectArgs = "<= Please specify a chatroom name after \'/join\'. \n";
+					incorrectArgs += user;
+					out.write(incorrectArgs.getBytes());
+					continue;
+				}
+
+				String groupName = cmd[1];
+				if (!chatrooms.containsKey(groupName)) {
+					String noGroup = "<= That is not an available chatroom name. \n";
+					noGroup += "<= Please try \'/rooms\' for a list of available rooms. \n";
+					noGroup += user;
+					out.write(noGroup.getBytes());
+					continue;
+				}
+
 				newUserToGroup(username, groupName, sock);
 				chat(groupName, username, in, out, sock);
 			} else if (cmd[0].equals("/help")) {
 				out.write(listOfCommands.getBytes());
 			} else if (cmd[0].equals("/createRoom")) {
-				
-			} else { // error - let the user know the list of commands!
+				if (cmd.length < 2) {
+					String incorrectArgs = "<= Please specify a chatroom name after \'/createRoom\'. \n";
+					incorrectArgs += user;
+					out.write(incorrectArgs.getBytes());
+					continue;
+				}
+
+				String groupName = cmd[1];
+				lockChatrooms.lock();
+				chatrooms.put(groupName, new HashSet<String>());
+				lockChatrooms.unlock();
+
+				String created = "<= " + groupName + " created. \n";
+				out.write(created.getBytes());
+			} else if (cmd[0].equals("/deleteRoom")){
+				if (cmd.length < 2) {
+					String incorrectArgs = "<= Please specify a chatroom name after \'/deleteRoom\'. \n";
+					incorrectArgs += user;
+					out.write(incorrectArgs.getBytes());
+					continue;
+				}
+
+				String groupName = cmd[1];
+				lockChatrooms.lock();
+				if (!chatrooms.containsKey(groupName)) {
+					String noRoom = "<= There is no room called " + groupName + " found. \n";
+					noRoom += user;
+					out.write(noRoom.getBytes());
+					lockChatrooms.unlock();
+					continue;
+				}
+
+				HashSet<String> members = chatrooms.get(groupName);
+				if (members.size() != 0) {
+					String noDelete = "<= You can't delete a room with people still in it! \n";
+					noDelete += user;
+					out.write(noDelete.getBytes());
+					lockChatrooms.unlock();
+					continue;
+				}
+
+				chatrooms.remove(groupName);
+				lockChatrooms.unlock();
+
+				String deleted = "<= " + groupName + " deleted. \n";
+				out.write(deleted.getBytes());
+			}else { // error - let the user know the list of commands!
 				String error = "Whoops! That wasn't a valid command.. try typing \'/help\' for a list of commands!";
 				out.write(error.getBytes());
 			}
 
-			out.write("=> ".getBytes());
+			out.write(user.getBytes());
 		}
 		if (len == -1) { // user left - take them off the socks list
 			lockSocks.lock();
@@ -162,6 +229,25 @@ public class ChatServer {
 			sock.close();
 			return;
 		}
+	}
+
+	private void printRooms(Socket sock) throws IOException {
+		lockChatrooms.lock();
+		if (chatrooms.size() == 0) {
+			String noRooms = "<= There are no chatrooms open right now! \n";
+			noRooms += "<= You can create one by using the \'/createRoom <Room Name>\' command. \n";
+			sock.getOutputStream().write(noRooms.getBytes());
+			lockChatrooms.unlock();
+			return;
+		}
+
+		String rooms = "<= Active rooms are: \n";
+		for (String chatroomName : chatrooms.keySet()) {
+			HashSet<String> members = chatrooms.get(chatroomName);
+			rooms += "<= * " + chatroomName + " (" + members.size() + ") \n";
+		}
+		lockChatrooms.unlock();
+		sock.getOutputStream().write(rooms.getBytes());
 	}
 
 	/**
@@ -211,7 +297,7 @@ public class ChatServer {
 		byte[] data = new byte[2000];
 		int len = 0;
 
-		String greeting = "<= Welcome to the Weeby chat server! \n";
+		String greeting = "<= Welcome to Katherine's chat server! \n";
 		greeting += "<= Login Name? \n";
 		greeting += "=> ";
 		out.write(greeting.getBytes());
