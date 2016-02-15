@@ -111,6 +111,9 @@ public class ChatServer {
 		commands(username, in, out, sock);
 	}
 
+	/**
+	* allows the user to use the given list of commands to do various tasks in the chatroom
+	*/
 	private void commands(String username, InputStream in, OutputStream out, Socket sock) throws IOException {
 		byte[] data = new byte[2000];
 		int len = 0;
@@ -155,7 +158,7 @@ public class ChatServer {
 					continue;
 				}
 
-				String groupName = cmd[1];
+				String groupName = getRoomName(cmd);
 				if (!chatrooms.containsKey(groupName)) {
 					String noGroup = "<= That is not an available chatroom name. \n";
 					noGroup += "<= Please try \'/rooms\' for a list of available rooms. \n";
@@ -176,14 +179,14 @@ public class ChatServer {
 					continue;
 				}
 
-				String groupName = cmd[1];
+				String groupName = getRoomName(cmd);
 				lockChatrooms.lock();
 				chatrooms.put(groupName, new HashSet<String>());
 				lockChatrooms.unlock();
 
 				String created = "<= " + groupName + " created. \n";
 				out.write(created.getBytes());
-			} else if (cmd[0].equals("/deleteRoom")){
+			} else if (cmd[0].equals("/deleteRoom")) {
 				if (cmd.length < 2) {
 					String incorrectArgs = "<= Please specify a chatroom name after \'/deleteRoom\'. \n";
 					incorrectArgs += user;
@@ -191,7 +194,7 @@ public class ChatServer {
 					continue;
 				}
 
-				String groupName = cmd[1];
+				String groupName = getRoomName(cmd);
 				lockChatrooms.lock();
 				if (!chatrooms.containsKey(groupName)) {
 					String noRoom = "<= There is no room called " + groupName + " found. \n";
@@ -231,6 +234,25 @@ public class ChatServer {
 		}
 	}
 
+	/**
+	* turns the rest of the command array into a string
+	*/
+	private String getRoomName(String[] command) {
+		// we can assume that command.length > 1
+		StringBuffer rtn = new StringBuffer();
+		for (int i = 1; i < command.length; i++) {
+			rtn.append(command[i]);
+			if (i != command.length - 1) {
+				rtn.append(" ");
+			}
+		}
+		return rtn.toString();
+	}
+
+	/**
+	* prints the list of available rooms and the number of people currently in it
+	* if no rooms are open, it suggests the user to create one
+	*/
 	private void printRooms(Socket sock) throws IOException {
 		lockChatrooms.lock();
 		if (chatrooms.size() == 0) {
@@ -254,6 +276,7 @@ public class ChatServer {
 	* allows the user to chat in the specified chat room
 	**/ 
 	private void chat(String groupName, String username, InputStream in, OutputStream out, Socket sock) throws IOException {
+		// TODO: figure out the =>'s
 		byte[] data = new byte[2000];
 		int len = 0;
 
