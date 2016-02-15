@@ -42,7 +42,7 @@ public class ChatServer {
 	}
 
 	/**
-	* minds socket to port
+	* binds socket to port
 	**/
 	public ChatServer(int port) throws IOException {
 		socks = new HashMap<String,Socket>();
@@ -124,6 +124,7 @@ public class ChatServer {
 		listOfCommands += ARROW + "* /rooms: prints out the list of rooms and how many people are in each \n";
 		listOfCommands += ARROW + "* /createRoom <Room Name>: creates a chatroom called \'Room Name\' \n";
 		listOfCommands += ARROW + "* /deleteRoom <Room Name>: deletes the chatroom called \'Room Name\' \n";
+		listOfCommands += ARROW + "* /changeUsername <Username>: changes your username to \'Username\' \n";
 		listOfCommands += ARROW + "* /help <Room Name>: lists these command options \n";
 		listOfCommands += ARROW + "* /quit: to exit the chatroom \n";
 		listOfCommands += ARROW + "End of list. \n";
@@ -155,7 +156,7 @@ public class ChatServer {
 					continue;
 				}
 
-				String groupName = getRoomName(cmd);
+				String groupName = getRestOfCommand(cmd);
 				if (!chatrooms.containsKey(groupName)) {
 					String noGroup = ARROW + "That is not an available chatroom name. \n";
 					noGroup += ARROW + "Please try \'/rooms\' for a list of available rooms. \n";
@@ -176,7 +177,7 @@ public class ChatServer {
 					continue;
 				}
 
-				String groupName = getRoomName(cmd);
+				String groupName = getRestOfCommand(cmd);
 				lockChatrooms.lock();
 				chatrooms.put(groupName, new HashSet<String>());
 				lockChatrooms.unlock();
@@ -191,7 +192,7 @@ public class ChatServer {
 					continue;
 				}
 
-				String groupName = getRoomName(cmd);
+				String groupName = getRestOfCommand(cmd);
 				lockChatrooms.lock();
 				if (!chatrooms.containsKey(groupName)) {
 					String noRoom = ARROW + "There is no room called " + groupName + " found. \n";
@@ -215,7 +216,32 @@ public class ChatServer {
 
 				String deleted = ARROW + groupName + " deleted. \n";
 				out.write(deleted.getBytes());
-			}else { // error - let the user know the list of commands!
+			} else if (cmd[0].equals("/changeUsername")) {
+				if (cmd.length < 2) {
+					String incorrectArgs = ARROW + "Please specify a username you want to change to after \'/deleteRoom\'. \n";
+					incorrectArgs += ARROW;
+					out.write(incorrectArgs.getBytes());
+					continue;
+				} 
+
+				String desiredName = getRestOfCommand(cmd);
+				if (socks.containsKey(desiredName)) {
+					String takenName = ARROW + "That name has already been taken! Please choose another. \n";
+					takenName += ARROW;
+					out.write(takenName.getBytes());
+					continue;
+				}
+
+				lockSocks.lock();
+				// Socket sock = socks.get(username);
+				socks.remove(username);
+				socks.put(desiredName, sock);
+				lockSocks.unlock();
+
+				username = desiredName;
+				String changeSucess = ARROW + "Name has been changed to: " + username + "\n";
+				out.write(changeSucess.getBytes());
+			} else { // error - let the user know the list of commands!
 				String error = ARROW + "Whoops! That wasn't a valid command.. try typing \'/help\' for a list of commands! \n";
 				out.write(error.getBytes());
 			}
@@ -233,7 +259,7 @@ public class ChatServer {
 	/**
 	* turns the rest of the command array into a string
 	*/
-	private String getRoomName(String[] command) {
+	private String getRestOfCommand(String[] command) {
 		// we can assume that command.length > 1
 		StringBuffer rtn = new StringBuffer();
 		for (int i = 1; i < command.length; i++) {
@@ -317,7 +343,7 @@ public class ChatServer {
 		int len = 0;
 
 		String greeting = ARROW + "Welcome to Katherine's chat server! \n";
-		greeting += ARROW + "Login Name? \n";
+		greeting += ARROW + "What would you like your Username to be?\n";
 		greeting += ARROW;
 		out.write(greeting.getBytes());
 
