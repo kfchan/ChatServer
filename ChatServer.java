@@ -29,7 +29,7 @@ public class ChatServer {
 			System.exit(-1);
 		}
 
-		int port = 8080; // default port
+		int port = 5555; // default port
 		if (arg.length == 1) {
 			try {
 				port = Integer.parseInt(arg[0]);
@@ -248,42 +248,9 @@ public class ChatServer {
 				String changeSucess = ARROW + "Name has been changed to: " + username + "\n";
 				out.write(changeSucess.getBytes());
 			} else if (cmd[0].equals("/PM")) {
-				if (cmd.length < 2) {					
-					String incorrectArgs = ARROW + "Please specify a user you want to private message after \'/PM\'. \n";
-					incorrectArgs += ARROW;
-					out.write(incorrectArgs.getBytes());
-					continue;
-				}
-
-				String user = getRestOfCommand(cmd);
-				if (!socks.containsKey(user)) {
-					String notFound = ARROW + "User not found: " + user + " \n";
-					notFound += ARROW;
-					out.write(notFound.getBytes());
-					continue;
-				}
-				replyTo.put(username, user);
-				replyTo.put(user, username);
-
-				sendPrivateMessage(username, user);
+				privateMessage(cmd, username, sock);
 			} else if (cmd[0].equals("/replyPM")) {
-				if (!replyTo.containsKey(username)) {
-					String noReply = ARROW + "You haven't been private messaging anyone! \n";
-					noReply += ARROW + "This command PMs the last person you PM or the last perso that PM'd you. \n";
-					noReply += ARROW;
-					out.write(noReply.getBytes());
-					continue;					
-				}
-				if (cmd.length < 2) {					
-					String incorrectArgs = ARROW + "Please specify a message you want to pass on to " + replyTo + " \n";
-					incorrectArgs += ARROW;
-					out.write(incorrectArgs.getBytes());
-					continue;
-				}
-
-				String pm = getRestOfCommand(cmd) + "\n";
-
-				sendPrivateMessage(username, replyTo.get(username), pm);
+				replyPM(cmd, username, sock);
 			} else { // error - let the user know the list of commands!
 				String error = ARROW + "Whoops! That wasn't a valid command.. try typing \'/help\' for a list of commands! \n";
 				out.write(error.getBytes());
@@ -298,10 +265,55 @@ public class ChatServer {
 	}
 
 	/**
+	* prompts user for the username of whoever they want to PM
+	* then asks them for a message they want to send and then sends it
+	**/
+	private void privateMessage(String[] cmd, String username, Socket sock) throws IOException {
+		OutputStream out = sock.getOutputStream();
+		if (cmd.length < 2) {					
+			String incorrectArgs = ARROW + "Please specify a user you want to private message after \'/PM\'. \n";
+			out.write(incorrectArgs.getBytes());
+			return;
+		}
+
+		String user = getRestOfCommand(cmd);
+		if (!socks.containsKey(user)) {
+			String notFound = ARROW + "User not found: " + user + " \n";
+			out.write(notFound.getBytes());
+			return;
+		}
+		replyTo.put(username, user);
+		replyTo.put(user, username);
+
+		sendPrivateMessage(username, user);
+	}
+
+	/**
+	* sends a PM to the last person user sent/recieved a PM to
+	**/
+	private void replyPM(String[] cmd, String username, Socket sock) throws IOException {
+		OutputStream out = sock.getOutputStream();
+		if (!replyTo.containsKey(username)) {
+			String noReply = ARROW + "You haven't been private messaging anyone! \n";
+			noReply += ARROW + "This command PMs the last person you PM or the last perso that PM'd you. \n";
+			out.write(noReply.getBytes());
+			return;					
+		}
+		if (cmd.length < 2) {					
+			String incorrectArgs = ARROW + "Please specify a message you want to pass on to " + replyTo + " \n";
+			out.write(incorrectArgs.getBytes());
+			return;
+		}
+
+		String pm = getRestOfCommand(cmd) + "\n";
+		sendPrivateMessage(username, replyTo.get(username), pm);
+	}
+
+	/**
 	* prints all online users 
 	**/
 	private void printUsers(String username, Socket sock) throws IOException {
-		String users = "The following users are online: \n";
+		String users = 	ARROW + "The following users are online: \n";
 
 		lockSocks.lock();
 		for (String user : socks.keySet()) {
