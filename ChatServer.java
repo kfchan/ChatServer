@@ -40,7 +40,7 @@ public class ChatServer {
 			}
 		}
 
-		ChatServer myserver = new ChatServer(port);
+		ChatServer myServer = new ChatServer(port);
 	}
 
 	/**
@@ -126,10 +126,11 @@ public class ChatServer {
 		// TODO: add a command /users that shows what users are online (for PM purposes)
 		String listOfCommands = ARROW + "Here are a list of commands you can do! \n";
 		listOfCommands += ARROW + "* /join <Room Name>: lets you join the room called \'Room Name\' \n";
-		listOfCommands += ARROW + "* /rooms: prints out the list of rooms and how many people are in each \n";
 		listOfCommands += ARROW + "* /createRoom <Room Name>: creates a chatroom called \'Room Name\' \n";
 		listOfCommands += ARROW + "* /deleteRoom <Room Name>: deletes the chatroom called \'Room Name\' \n";
 		listOfCommands += ARROW + "* /changeUsername <Username>: changes your username to \'Username\' \n";
+		listOfCommands += ARROW + "* /rooms: prints out the list of rooms and how many people are in each \n";
+		listOfCommands += ARROW + "* /users: prints out the list of users are online \n";				
 		listOfCommands += ARROW + "* /PM <Username>: to privately message user, \'Username\' \n";
 		listOfCommands += ARROW + "* /replyPM <Message>: private message to last person who sent PM with message \'Message\' \n";
 		listOfCommands += ARROW + "* /help <Room Name>: lists these command options \n";
@@ -155,6 +156,8 @@ public class ChatServer {
 				return;
 			} else if (cmd[0].equals("/rooms")) {
 				printRooms(sock);
+			} else if (cmd[0].equals("/users")) {
+				printUsers(username, sock);
 			} else if (cmd[0].equals("/join")) {
 				if (cmd.length < 2) {
 					String incorrectArgs = ARROW + "Please specify a chatroom name after \'/join\'. \n";
@@ -295,6 +298,26 @@ public class ChatServer {
 	}
 
 	/**
+	* prints all online users 
+	**/
+	private void printUsers(String username, Socket sock) throws IOException {
+		String users = "The following users are online: \n";
+
+		lockSocks.lock();
+		for (String user : socks.keySet()) {
+			users += ARROW + "* " + user;
+			if (user.equals(username)) {
+				users += " " + THIS_IS_YOU;
+			}
+			users += "\n";
+		}
+		lockSocks.unlock();
+
+		users += ARROW + "End of list. \n";
+		sock.getOutputStream().write(users.getBytes());
+	}
+
+	/**
 	* removes specified user from the socks hashmap and then closes their socket
 	*/
 	private void removeFromSocks(String username) throws IOException {
@@ -309,8 +332,7 @@ public class ChatServer {
 	/**
 	* removes specified user completely from the replyTo hashmap
 	*/
-	private void removeFromReplies(String username) {
-		// TODO: let anyone PMing 'username' that 'username' has left
+	private void removeFromReplies(String username) throws IOException {
 		lockReplies.lock();
 		if (replyTo.containsKey(username)) {
 			replyTo.remove(username);
@@ -318,6 +340,11 @@ public class ChatServer {
 		if (replyTo.containsValue(username)) {
 			for (String key: replyTo.keySet()) {
 				if (replyTo.get(key).equals(username)) {
+					// let 'key' know that username logged off and that they won't be able to use /replyPM
+					String inform = "***" + username + " has logged off.  You now need to send/recieve a PM to use /replyPM. \n" + ARROW;
+					Socket informSock = socks.get(key);
+					informSock.getOutputStream().write(inform.getBytes());
+
 					replyTo.remove(key);
 					break;
 				}
