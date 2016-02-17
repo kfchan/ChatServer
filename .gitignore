@@ -1,6 +1,1 @@
-# Ignore everything
-*
-# Not these files
-!*.java
-!README*
-!.gitignore
+*.class
