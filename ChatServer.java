@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+// TODO: make the strings and ioexception catching more consistent !!
 public class ChatServer {
 
 	private static final String THIS_IS_YOU = "(** this is you!)";
@@ -134,7 +135,7 @@ public class ChatServer {
 		listOfCommands += ARROW + "* /PM <Username>: to privately message user, \'Username\' \n";
 		listOfCommands += ARROW + "* /replyPM <Message>: private message to last person who sent PM with message \'Message\' \n";
 		listOfCommands += ARROW + "* /help <Room Name>: lists these command options \n";
-		listOfCommands += ARROW + "* /quit: to exit the chatroom \n";
+		listOfCommands += ARROW + "* /quit: to exit the chat server \n";
 		listOfCommands += ARROW + "End of list. \n";
 
 		out.write(listOfCommands.getBytes());
@@ -148,12 +149,7 @@ public class ChatServer {
 				continue;
 			}
 			if (cmd[0].equals("/quit")) {
-				String bye = ARROW + "Bye! :) \n";
-				out.write(bye.getBytes());
-
-				removeFromReplies(username);
-				removeFromSocks(username);
-				return;
+				quit(username);
 			} else if (cmd[0].equals("/rooms")) {
 				printRooms(sock);
 			} else if (cmd[0].equals("/users")) {
@@ -264,6 +260,16 @@ public class ChatServer {
 		}
 	}
 
+	private void quit(String username) throws IOException {
+		OutputStream out = socks.get(username).getOutputStream();
+
+		String bye = ARROW + "Bye! :) \n";
+		out.write(bye.getBytes());
+
+		removeFromReplies(username);
+		removeFromSocks(username);
+	}
+
 	/**
 	* prompts user for the username of whoever they want to PM
 	* then asks them for a message they want to send and then sends it
@@ -282,8 +288,6 @@ public class ChatServer {
 			out.write(notFound.getBytes());
 			return;
 		}
-		replyTo.put(username, user);
-		replyTo.put(user, username);
 
 		sendPrivateMessage(username, user);
 	}
@@ -293,20 +297,25 @@ public class ChatServer {
 	**/
 	private void replyPM(String[] cmd, String username, Socket sock) throws IOException {
 		OutputStream out = sock.getOutputStream();
+		lockReplies.lock();
 		if (!replyTo.containsKey(username)) {
 			String noReply = ARROW + "You haven't been private messaging anyone! \n";
 			noReply += ARROW + "This command PMs the last person you PM or the last perso that PM'd you. \n";
 			out.write(noReply.getBytes());
+			lockReplies.unlock();
 			return;					
 		}
+		lockReplies.unlock();
 		if (cmd.length < 2) {					
 			String incorrectArgs = ARROW + "Please specify a message you want to pass on to " + replyTo + " \n";
 			out.write(incorrectArgs.getBytes());
 			return;
 		}
-
+		lockReplies.lock();
+		String sendTo = replyTo.get(username);
+		lockReplies.unlock();
 		String pm = getRestOfCommand(cmd) + "\n";
-		sendPrivateMessage(username, replyTo.get(username), pm);
+		sendPrivateMessage(username, sendTo, pm);
 	}
 
 	/**
@@ -419,6 +428,11 @@ public class ChatServer {
 	* Sends a private from 'user1' to 'user2' with message 'message'
 	**/
 	private void sendPrivateMessage(String user1, String user2, String message) throws IOException {
+		lockReplies.lock();
+		replyTo.put(user1, user2);
+		replyTo.put(user2, user1);
+		lockReplies.unlock();		
+
 		lockSocks.lock();
 		Socket sock2 = socks.get(user2);
 		lockSocks.unlock();		
@@ -469,6 +483,17 @@ public class ChatServer {
 	* allows the user to chat in the specified chat room
 	**/ 
 	private void chat(String groupName, String username, InputStream in, OutputStream out, Socket sock) throws IOException {
+		String help = "You can use the following commands in the chatroom: \n";
+		help += ARROW + "* /leave: to leave the chatroom \n";
+		help += ARROW + "* /users: prints out the list of users are online \n";				
+		help += ARROW + "* /PM <Username>: to privately message user, \'Username\' \n";
+		help += ARROW + "* /replyPM <Message>: private message to last person who sent PM with message \'Message\' \n";
+		help += ARROW + "* /help <Room Name>: lists these command options \n";
+		help += ARROW + "* /quit: to exit the chat server \n";
+		help += ARROW + "End of list. \n";
+		out.write(help.getBytes());
+		out.write(ARROW.getBytes());
+		
 		byte[] data = new byte[2000];
 		int len = 0;
 
@@ -476,7 +501,8 @@ public class ChatServer {
 			String message = new String(data, 0, len);
 
 			// TODO: allow any user in this group to /PM anyone else online (not limited to this group)
-			if (message.contains("/leave")) { // user to leave the chatroom - remove from chatroom list
+			String[] cmd = message.substring(0, message.length()-2).split(" ");
+			if (cmd[0].equals("/leave")) { // user to leave the chatroom - remove from chatroom list
 				String leftRoom = "* user has left chat: " + username;
 				sendMessageToChatroom(groupName, leftRoom, username);
 				lockChatrooms.lock();
@@ -484,10 +510,19 @@ public class ChatServer {
 				members.remove(username);
 				lockChatrooms.unlock();
 				return;
+			} else if (cmd[0].equals("/PM")) {
+				privateMessage(cmd, username, sock);
+			} else if (cmd[0].equals("/replyPM")) {
+				replyPM(cmd, username, sock);
+			} else if (cmd[0].equals("/users")) {
+				printUsers(username, sock);
+			} else if (cmd[0].equals("/quit")) {
+				quit(username);
+			} else if (cmd[0].equals("/help")) {
+				out.write(help.getBytes());
+			} else { // a normal message to the members of the chatroom
+				sendMessage(groupName, username + ": " + message, username);
 			}
-
-			// print message to all other users
-			sendMessage(groupName, username + ": " + message, username);
 			out.write(ARROW.getBytes());
 		}
 		if (len == -1) { // if user leaves server remove them from all lists and close the socket
@@ -549,12 +584,16 @@ public class ChatServer {
 	/**
 	* handles new user functions when they join a chat room
 	**/
-	private void newUserToGroup(String username, String groupName, Socket newSock) {
+	private void newUserToGroup(String username, String groupName, Socket newSock) throws IOException {
+		String welcome = "Welcome to " + groupName + "!\n";
+		newSock.getOutputStream().write(welcome.getBytes());
+
 		lockChatrooms.lock();
 		HashSet<String> members = chatrooms.get(groupName);
 		members.add(username);
 		lockChatrooms.unlock();
 
+		// tell everyone in the chatroom that new user has entered
 		StringBuffer message = new StringBuffer();
 		message.append("Entering room: ");
 		message.append(username);
