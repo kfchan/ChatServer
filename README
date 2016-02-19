@@ -3,5 +3,7 @@ A chat server for my weeby.co application!
 Known Issues
 - exiting chat server with the escape key instead of '/quit' doesnt remove 
   the name/socket from the socket hashMap until they leave telnet
+- chat server doesn't remove users/sockets when they have been inactive or 
+  when their terminal 'dies'
 
 Katherine Chan
