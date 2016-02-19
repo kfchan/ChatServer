@@ -86,7 +86,6 @@ public class ChatServer {
 		byte[] data = new byte[2000];
 		int len = 0;
 
-		// TODO: add a command /users that shows what users are online (for PM purposes)
 		String listOfCommands = ARROW + "Here are a list of commands you can do! \n";
 		listOfCommands += ARROW + "* /join <Room Name>: lets you join the room called \'Room Name\' \n";
 		listOfCommands += ARROW + "* /rooms: prints out the list of rooms and how many people are in each \n";
@@ -782,8 +781,6 @@ public class ChatServer {
 		} catch (IOException e) {
 			System.err.println("Error getting new user's name");
 		}
-
-;
 	}
 
 	public static void main(String[] arg) { 
