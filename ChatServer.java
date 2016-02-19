@@ -445,6 +445,12 @@ public class ChatServer {
 			} else if (cmd[0].equals("/users")) {
 				print = printUsers(username, sock);
 			} else if (cmd[0].equals("/quit")) {
+				String leftRoom = "* user has left the chatroom: " + username;
+				sendMessageToChatroom(groupName, leftRoom, username);
+				lockChatrooms.lock();
+				HashSet members = chatrooms.get(groupName);
+				members.remove(username);
+				lockChatrooms.unlock();				
 				quit(username, out);
 				return -1;
 			} else if (cmd[0].equals("/help")) {
