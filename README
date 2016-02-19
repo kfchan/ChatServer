@@ -1,3 +1,7 @@
 A chat server for my weeby.co application!
 
+Known Issues:
+- when typing messages, it is possible to recieve messages that will 
+  disrupt the typing
+
 Katherine Chan
