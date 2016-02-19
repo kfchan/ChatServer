@@ -22,6 +22,7 @@ public class ChatServer {
 	private HashMap<String, HashSet<String>> chatrooms; // chatroom and chatroom members
 	private HashMap<String, String> replyTo; // keeps track of who to reply to for each user
 	private ServerSocket server_sock;
+	private boolean nameChangeFail;
 
 	/**
 	* binds socket to port
@@ -33,6 +34,7 @@ public class ChatServer {
 		socks = new HashMap<String,Socket>();
 		chatrooms = new HashMap<String, HashSet<String>>(); 
 		replyTo = new HashMap<String, String>();
+		nameChangeFail = false;
 
 		// auto create one chatroom so that the first user doesn't have to
 		chatrooms.put("main", new HashSet<String>());
@@ -129,8 +131,12 @@ public class ChatServer {
 			} else if (cmd[0].equals("/deleteRoom")) {
 				print = deleteRoom(cmd, username);
 			} else if (cmd[0].equals("/changeUsername")) {
-				username = changeUsername(cmd, username);
-				print = ARROW + "Name has been changed to: " + username + "\n";
+				print = changeUsername(cmd, username);
+				if (!nameChangeFail) {
+					username = print;
+					print = ARROW + "Name has been changed to: " + print + "\n";
+					nameChangeFail = false;
+				}
 			} else if (cmd[0].equals("/users")) {
 				print = printUsers(username, sock);
 			} else if (cmd[0].equals("/PM")) {
@@ -313,18 +319,19 @@ public class ChatServer {
 	**/
 	private String changeUsername(String[] cmd, String username) {
 		if (cmd.length < 2) {
-			String incorrectArgs = ARROW + "Please specify a username you want to change to after \'/deleteRoom\'. \n";
-			incorrectArgs += ARROW;
+			String incorrectArgs = ARROW + "Please specify a username you want to change to after \'/changeUsername\'. \n";
+			nameChangeFail = true;
 			return incorrectArgs;
 		} 
 
 		String desiredName = getRestOfCommand(cmd);
 		if (socks.containsKey(desiredName)) {
 			String takenName = ARROW + "That name has already been taken! Please choose another. \n";
-			takenName += ARROW;
+			nameChangeFail = true;
 			return takenName;
 		}
 
+		nameChangeFail = false;
 		changeUsername(username, desiredName);
 		return desiredName;
 	}
@@ -358,7 +365,7 @@ public class ChatServer {
 	* handles new user functions when they join a chat room
 	**/
 	private void newUserToGroup(String username, String groupName, Socket newSock) {
-		String welcome = ARROW + "Welcome to " + groupName + "!\n";
+		String welcome = ARROW + "Welcome to " + groupName + "!\n" + ARROW;
 		try {
 			newSock.getOutputStream().write(welcome.getBytes());
 		} catch (IOException e) {
@@ -374,7 +381,7 @@ public class ChatServer {
 		String message = "Entering room: " + username + "\n";
 		sendMessage(groupName, message, username);
 
-		String users = ARROW + "Current users online: \n";
+		String users = "Current users online: \n";
 
 		Socket s;
 		OutputStream out;
@@ -430,6 +437,7 @@ public class ChatServer {
 
 			String[] cmd = message.substring(0, message.length()-2).split(" ");
 			String print = "";
+			boolean needArrow = true;
 			if (cmd[0].equals("/leave")) { // user to leave the chatroom - remove from chatroom list
 				String leftRoom = "* user has left the chatroom: " + username;
 				sendMessageToChatroom(groupName, leftRoom, username);
@@ -454,14 +462,16 @@ public class ChatServer {
 				quit(username, out);
 				return -1;
 			} else if (cmd[0].equals("/help")) {
-				print = help;
+				print = ARROW + help;
 			} else { // a normal message to the members of the chatroom
+				out.write(ARROW.getBytes());
 				sendMessage(groupName, username + ": " + message, username);
+				needArrow = false;
 			}
 
 			try {
 				out.write(print.getBytes());
-				out.write(ARROW.getBytes());
+				if (needArrow) out.write(ARROW.getBytes());
 			} catch (IOException e) {
 				System.err.println("Printing the arrow for user " + username + " failed");
 			}
@@ -487,7 +497,6 @@ public class ChatServer {
 		byte[] m = (message + ARROW).getBytes();
 		OutputStream out;
 		Socket s;
-		boolean skip = false;
 
 		lockChatrooms.lock();
 		lockSocks.lock();
@@ -495,22 +504,16 @@ public class ChatServer {
 		Iterator<String> it = members.iterator();
 		while (it.hasNext()) {
 			String n = it.next();
-			if (n.equals(username)) {
-				skip = true;
-			} 
-			if (!skip) {
-				try {
-					s = socks.get(n);
-					out = s.getOutputStream();
-					out.write(m);
-				} catch (IOException e) {
-					System.err.println("Message sending failed for " + n);
-						lockChatrooms.unlock();
-						lockSocks.unlock();
-					return;
-				}
+			try {
+				s = socks.get(n);
+				out = s.getOutputStream();
+				out.write(m);
+			} catch (IOException e) {
+				System.err.println("Message sending failed for " + n);
+					lockChatrooms.unlock();
+					lockSocks.unlock();
+				return;
 			}
-			skip = false;
 		}
 		lockChatrooms.unlock();
 		lockSocks.unlock();
@@ -711,12 +714,15 @@ public class ChatServer {
 		lockReplies.unlock();		
 
 		lockSocks.lock();
+		Socket sock1 = socks.get(user1);
 		Socket sock2 = socks.get(user2);
 		lockSocks.unlock();		
 
-		message = "***PM from " + user1 + ": " + message + ARROW;
+		String sentMsg = "***PM from " + user1 + ": " + message + ARROW;
+		String confirmMsg = ARROW + "***PM sent to " + user2 + ": " + message;
 		try {
-			sock2.getOutputStream().write(message.getBytes());
+			sock1.getOutputStream().write(confirmMsg.getBytes());
+			sock2.getOutputStream().write(sentMsg.getBytes());
 		} catch (IOException e) {
 			System.err.println("Private message sending failed from " + user1 + " to " + user2);
 		}
