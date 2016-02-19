@@ -124,7 +124,9 @@ public class ChatServer {
 				}
 
 				newUserToGroup(username, groupName, sock);
-				chat(groupName, username, in, out, sock);
+				if (chat(groupName, username, in, out, sock) == -1) {
+					return;
+				}
 			} else if (cmd[0].equals("/rooms")) {
 				printRooms(sock);
 			} else if (cmd[0].equals("/createRoom")) {
@@ -205,6 +207,7 @@ public class ChatServer {
 				out.write(listOfCommands.getBytes());
 			} else if (cmd[0].equals("/quit")) {
 				quit(username);
+				return;
 			} else { // error - let the user know the list of commands!
 				String error = ARROW + "Whoops! That wasn't a valid command.. try typing \'/help\' for a list of commands! \n";
 				out.write(error.getBytes());
@@ -305,7 +308,7 @@ public class ChatServer {
 	* handles new user functions when they join a chat room
 	**/
 	private void newUserToGroup(String username, String groupName, Socket newSock) throws IOException {
-		String welcome = "Welcome to " + groupName + "!\n";
+		String welcome = ARROW + "Welcome to " + groupName + "!\n";
 		newSock.getOutputStream().write(welcome.getBytes());
 
 		lockChatrooms.lock();
@@ -355,7 +358,7 @@ public class ChatServer {
 	/**
 	* allows the user to chat in the specified chat room
 	**/ 
-	private void chat(String groupName, String username, InputStream in, OutputStream out, Socket sock) throws IOException {
+	private int chat(String groupName, String username, InputStream in, OutputStream out, Socket sock) throws IOException {
 		String help = "You can use the following commands in the chatroom: \n";
 		help += ARROW + "* /leave: to leave the chatroom \n";
 		help += ARROW + "* /users: prints out the list of users are online \n";				
@@ -373,7 +376,6 @@ public class ChatServer {
 		while ((len = in.read(data)) != -1) {
 			String message = new String(data, 0, len);
 
-			// TODO: allow any user in this group to /PM anyone else online (not limited to this group)
 			String[] cmd = message.substring(0, message.length()-2).split(" ");
 			if (cmd[0].equals("/leave")) { // user to leave the chatroom - remove from chatroom list
 				String leftRoom = "* user has left chat: " + username;
@@ -382,7 +384,7 @@ public class ChatServer {
 				HashSet members = chatrooms.get(groupName);
 				members.remove(username);
 				lockChatrooms.unlock();
-				return;
+				return 0;
 			} else if (cmd[0].equals("/PM")) {
 				privateMessage(cmd, username, sock);
 			} else if (cmd[0].equals("/replyPM")) {
@@ -391,6 +393,7 @@ public class ChatServer {
 				printUsers(username, sock);
 			} else if (cmd[0].equals("/quit")) {
 				quit(username);
+				return -1;
 			} else if (cmd[0].equals("/help")) {
 				out.write(help.getBytes());
 			} else { // a normal message to the members of the chatroom
@@ -407,8 +410,9 @@ public class ChatServer {
 			lockChatrooms.unlock();
 			
 			removeFromSocks(username);
-			return;
+			return -1;
 		}
+		return 0;
 	}
 
 	/**
