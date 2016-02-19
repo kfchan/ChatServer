@@ -1,5 +1,7 @@
 A chat server for my weeby.co application!
 
+To join, run 'telnet 52.35.192.67 5555'.
+
 Known Issues
 - exiting chat server with the escape key instead of '/quit' doesnt remove 
   the name/socket from the socket hashMap until they leave telnet
